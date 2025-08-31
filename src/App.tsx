@@ -846,7 +846,7 @@ function App() {
                                 aria-label={r._hidden ? 'Show row' : 'Hide row'}
                                 title={r._hidden ? 'Show row' : 'Hide row'}
                                 style={{ marginLeft: 2 }}
-                              >{r._hidden ? '👁‍🗨' : '👁'}</button>
+                              >👁</button>
                             </span>
                           )}
                         </th>
@@ -930,7 +930,7 @@ function LabelColumnSelect({ columns, rows, value, onChange, placeholder = 'Sele
   const baseCols = columns
   // Removed standalone allCols to satisfy exhaustive-deps; derive inside memo
   const filtered = useMemo(() => {
-    const allCols = allowNone ? ['__NONE__', ...baseCols] : baseCols
+    const allCols = (allowNone ? ['__NONE__', ...baseCols] : baseCols).filter(c => c !== '_hidden')
     if (!query.trim()) return allCols
     const q = query.toLowerCase()
     return allCols.filter(c => c === '__NONE__' ? '(none)'.includes(q) : c.toLowerCase().includes(q))
