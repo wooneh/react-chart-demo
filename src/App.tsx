@@ -63,6 +63,7 @@ function App() {
     { id: 'R&D', label: 'R&D', color: palette[3], visible: true },
     { id: 'Net Profit', label: 'Net Profit', color: palette[4], visible: true },
   ])
+  const [selectedSeriesIds, setSelectedSeriesIds] = useState<string[]>(() => series.filter(s => s.visible).map(s => s.id))
   const [activeCell, setActiveCell] = useState<{ r: number; c: string } | null>(null)
   const [labelColumn, setLabelColumn] = useState<string>('key')
   const [mappingOpen, setMappingOpen] = useState(true)
@@ -99,9 +100,34 @@ function App() {
   const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null)
   const [editingRowValue, setEditingRowValue] = useState<string>('')
 
+  // Sweep visibility toggle state (click + drag over headers)
+  const sweepActive = useRef<'row' | 'series' | null>(null)
+  const sweepRowSet = useRef<Set<string | number>>(new Set())
+  const sweepSeriesSet = useRef<Set<string>>(new Set())
+  const endSweep = useCallback(() => {
+    sweepActive.current = null
+    sweepRowSet.current.clear()
+    sweepSeriesSet.current.clear()
+  }, [])
+  useEffect(() => {
+    const up = () => endSweep()
+    window.addEventListener('mouseup', up)
+    return () => window.removeEventListener('mouseup', up)
+  }, [endSweep])
+
   const toggleSeriesVisible = (id: string) => {
     setSeries(prev => prev.map(s => s.id === id ? { ...s, visible: !s.visible } : s))
+    setSelectedSeriesIds(prev => prev.filter(sid => sid !== id)) // ensure hidden series removed from selection immediately
   }
+
+  useEffect(() => {
+    setSelectedSeriesIds(prev => {
+      const visibleIds = series.filter(s => s.visible).map(s => s.id)
+      const filtered = prev.filter(id => visibleIds.includes(id))
+      if (filtered.length) return filtered
+      return visibleIds.slice(0, Math.min(3, visibleIds.length)) // auto select first few if none
+    })
+  }, [series])
 
   const handleCellChange = useCallback(
     (rowIndex: number, field: string, value: string) => {
@@ -117,8 +143,13 @@ function App() {
 
   // Hide (soft delete) row instead of removing
   const hideRow = (index: number) => {
-    setRows(prev => prev.map((r,i) => i === index ? { ...r, _hidden: !r._hidden } : r))
+    setRows(prev => prev.map((r, i) => i === index ? { ...r, _hidden: !r._hidden } : r))
   }
+
+  // Bulk visibility helpers
+  // Removed hideAllRows / hideAllSeries per request (only show-all remains)
+  const showAllRows = () => setRows(prev => prev.map(r => ({ ...r, _hidden: false })))
+  const showAllSeries = () => setSeries(prev => prev.map(s => ({ ...s, visible: true })))
 
   const startRenameSeries = (id: string) => {
     const target = series.find(s => s.id === id)
@@ -237,12 +268,43 @@ function App() {
     cancelEditRowHeader()
   }
 
-  const visibleSeries = series.filter((s) => s.visible)
+  const handleSeriesHeaderMouseDown = (s: SeriesMeta, e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    // Ignore if clicking drag handle or rename / visibility buttons or while renaming
+    if ((e.target as HTMLElement).closest('.drag-handle') || (e.target as HTMLElement).closest('.rename-btn') || (e.target as HTMLElement).closest('.visibility-btn') || editingSeriesId === s.id) return
+    // Toggle this series visibility
+    toggleSeriesVisible(s.id)
+    sweepActive.current = 'series'
+    sweepSeriesSet.current.add(s.id)
+  }
+  const handleSeriesHeaderMouseEnter = (s: SeriesMeta) => {
+    if (sweepActive.current === 'series' && !sweepSeriesSet.current.has(s.id)) {
+      toggleSeriesVisible(s.id)
+      sweepSeriesSet.current.add(s.id)
+    }
+  }
+  const handleRowHeaderMouseDown = (ri: number, key: string | number, e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    if ((e.target as HTMLElement).closest('.row-drag-handle') || (e.target as HTMLElement).closest('.rename-btn') || (e.target as HTMLElement).closest('.visibility-btn') || editingRowIndex === ri) return
+    hideRow(ri)
+    sweepActive.current = 'row'
+    sweepRowSet.current.add(key)
+  }
+  const handleRowHeaderMouseEnter = (ri: number, key: string | number) => {
+    if (sweepActive.current === 'row' && !sweepRowSet.current.has(key)) {
+      hideRow(ri)
+      sweepRowSet.current.add(key)
+    }
+  }
+
+  const dataVisibleSeries = series.filter((s) => s.visible)
+  const chartSeries = dataVisibleSeries.filter(s => selectedSeriesIds.includes(s.id))
   const activeRows = rows.filter(r => !r._hidden)
 
   // Visible labels summaries
   const visibleRowLabels = activeRows.map(r => String(r[labelColumn] ?? r.key))
-  const visibleSeriesLabels = visibleSeries.map(s => s.label)
+  // All data-visible series labels (underlying data visibility, not chart subset selection)
+  const dataVisibleSeriesLabels = dataVisibleSeries.map(s => s.label)
   const summarize = (arr: string[], maxChars = 60) => {
     const full = arr.join(', ')
     if (full.length <= maxChars) return full
@@ -263,11 +325,20 @@ function App() {
     [rows, currentXColumn]
   )
 
-  // All columns available for label selection (including series columns)
+  // All columns available for label selection (excluding hidden series columns)
   const labelOptions = useMemo(() => {
     if (!rows.length) return ['key']
-    return Object.keys(rows[0])
-  }, [rows])
+    const hidden = new Set(series.filter(s => !s.visible).map(s => s.id))
+    return Object.keys(rows[0]).filter(c => !hidden.has(c))
+  }, [rows, series])
+
+  useEffect(() => {
+    const visibleIds = series.filter(s => s.visible).map(s => s.id)
+    if (!visibleIds.includes(pieSeriesColumn)) setPieSeriesColumn(visibleIds[0] || '')
+    if (!visibleIds.includes(histogramColumn)) setHistogramColumn(visibleIds[0] || '')
+    if (!visibleIds.includes(scatterYColumn)) setScatterYColumn(visibleIds[0] || '')
+    if (labelColumn !== 'key' && !visibleIds.includes(labelColumn)) setLabelColumn('key')
+  }, [series, pieSeriesColumn, histogramColumn, scatterYColumn, labelColumn])
 
   // Helper render function for charts
   const renderChartContents = () => {
@@ -292,9 +363,9 @@ function App() {
           <YAxis />
           <Tooltip />
           <Legend />
-          {visibleSeries.map(s => (
+          {chartSeries.map(s => (
             <Bar key={s.id} dataKey={s.id} name={s.label} fill={s.color} stackId="a">
-              {barColorColumn && chartRows.map((r,i) => (
+              {barColorColumn && chartRows.map((r, i) => (
                 <Cell key={i} fill={barColorScale(r[barColorColumn]) || s.color} />
               ))}
             </Bar>
@@ -307,12 +378,12 @@ function App() {
         <AreaChart data={chartRows} margin={commonMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#444" />
           <XAxis dataKey={labelColumn} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {visibleSeries.map(s => (
-              <Area key={s.id} type="monotone" dataKey={s.id} name={s.label} stroke={s.color} fill={s.color + '55'} isAnimationActive={false} />
-            ))}
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          {chartSeries.map(s => (
+            <Area key={s.id} type="monotone" dataKey={s.id} name={s.label} stroke={s.color} fill={s.color + '55'} isAnimationActive={false} />
+          ))}
         </AreaChart>
       )
     }
@@ -324,7 +395,7 @@ function App() {
           <PolarRadiusAxis />
           <Tooltip />
           <Legend />
-          {visibleSeries.map(s => (
+          {chartSeries.map(s => (
             <Radar key={s.id} name={s.label} dataKey={s.id} stroke={s.color} fill={s.color} fillOpacity={0.4} />
           ))}
         </RadarChart>
@@ -337,10 +408,10 @@ function App() {
           <Tooltip />
           <Legend />
           <Pie data={pieData} dataKey="value" nameKey="label" outerRadius={100} innerRadius={chartType === 'donut' ? 60 : 0} label>
-            {pieData.map((d,i) => {
+            {pieData.map((d, i) => {
               const color = palette[i % palette.length]
               // Use d.label in key to ensure stability and mark d as used
-              return <Cell key={String(d.label)+ '-' + i} fill={color} />
+              return <Cell key={String(d.label) + '-' + i} fill={color} />
             })}
           </Pie>
         </PieChart>
@@ -361,7 +432,7 @@ function App() {
         if (idx >= binCount) idx = binCount - 1
         bins[idx].count += 1
       })
-      bins.forEach((b,i) => {
+      bins.forEach((b, i) => {
         const start = min + i * binSize
         const end = start + binSize
         b.bin = `${Number(start.toFixed(2))}–${Number(end.toFixed(2))}`
@@ -384,8 +455,8 @@ function App() {
         chartRows.forEach(r => { const raw = r[barColorColumn]; const v = (typeof raw === 'boolean') ? String(raw) : raw as (string | number | undefined); if (!distinct.includes(v)) distinct.push(v) })
         return (v: unknown) => {
           const value = (typeof v === 'boolean') ? String(v) : v as string | number | undefined
-            const idx = distinct.indexOf(value)
-            return palette[idx % palette.length]
+          const idx = distinct.indexOf(value)
+          return palette[idx % palette.length]
         }
       })()
       return (
@@ -395,9 +466,9 @@ function App() {
           <YAxis />
           <Tooltip />
           <Legend />
-          {visibleSeries.map(s => (
+          {chartSeries.map(s => (
             <Bar key={s.id} dataKey={s.id} name={s.label} fill={s.color}>
-              {barColorColumn && chartRows.map((r,i) => (
+              {barColorColumn && chartRows.map((r, i) => (
                 <Cell key={i} fill={barColorScale(r[barColorColumn]) || s.color} />
               ))}
             </Bar>
@@ -406,7 +477,6 @@ function App() {
       )
     }
     if (chartType === 'scatter') {
-      // Build single dataset for selected Y column
       const scatterData = chartRows.map(r => {
         const x = r[currentXColumn]
         const y = r[scatterYColumn]
@@ -415,7 +485,6 @@ function App() {
         const colorVal = scatterColorColumn ? r[scatterColorColumn] : undefined
         return { x, y, z: sizeNum, colorVal }
       })
-      // Color scale for categorical color column
       const colorScale = (() => {
         if (!scatterColorColumn) return () => palette[0]
         const distinct: (string | number | undefined)[] = []
@@ -442,7 +511,7 @@ function App() {
         </ScatterChart>
       )
     }
-    // default line
+    // Default: line
     return (
       <LineChart data={chartRows} margin={commonMargin}>
         <CartesianGrid strokeDasharray="3 3" stroke="#444" />
@@ -450,7 +519,7 @@ function App() {
         <YAxis />
         <Tooltip />
         <Legend />
-        {visibleSeries.map(s => (
+        {chartSeries.map(s => (
           <Line key={s.id} type="monotone" dataKey={s.id} name={s.label} stroke={s.color} dot={false} strokeWidth={2} isAnimationActive={false} />
         ))}
       </LineChart>
@@ -475,7 +544,7 @@ function App() {
         <div className="map-group">
           <div className="group-label">Value series</div>
           <LabelColumnSelect
-            columns={series.map(s=>s.id)}
+            columns={dataVisibleSeries.map(s => s.id)}
             rows={rows}
             value={pieSeriesColumn}
             onChange={setPieSeriesColumn}
@@ -486,14 +555,14 @@ function App() {
         <div className="map-group">
           <div className="group-label">Column</div>
           <LabelColumnSelect
-            columns={series.map(s=>s.id)}
+            columns={dataVisibleSeries.map(s => s.id)}
             rows={rows}
             value={histogramColumn}
             onChange={setHistogramColumn}
           />
           <div style={{ marginTop: 6 }}>
             <label style={{ fontSize: '0.7rem', display: 'flex', gap: 4, alignItems: 'center' }}>Bins:
-              <input type="number" min={1} max={50} value={histogramBins} style={{ width: 60 }} onChange={e => setHistogramBins(Math.max(1, Math.min(50, Number(e.target.value)||10)))} />
+              <input type="number" min={1} max={50} value={histogramBins} style={{ width: 60 }} onChange={e => setHistogramBins(Math.max(1, Math.min(50, Number(e.target.value) || 10)))} />
             </label>
           </div>
         </div>
@@ -512,7 +581,7 @@ function App() {
           <div className="map-group">
             <div className="group-label">Y axis</div>
             <LabelColumnSelect
-              columns={series.map(s => s.id)}
+              columns={dataVisibleSeries.map(s => s.id)}
               rows={rows}
               value={scatterYColumn}
               onChange={setScatterYColumn}
@@ -547,7 +616,12 @@ function App() {
           {(chartType === 'line' || chartType === 'bar' || chartType === 'stackedBar' || chartType === 'area' || chartType === 'radar') && (
             <>
               <div className="group-label">{chartType === 'bar' || chartType === 'stackedBar' ? 'Bars' : chartType === 'area' ? 'Areas' : chartType === 'radar' ? 'Radars' : 'Lines'}</div>
-              <MultiSelectSeries series={series} onToggle={toggleSeriesVisible} rows={rows} />
+              <MultiSelectSeries
+                series={dataVisibleSeries}
+                selectedIds={selectedSeriesIds}
+                onToggleSelect={(id) => setSelectedSeriesIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                rows={rows}
+              />
             </>
           )}
         </div>
@@ -565,8 +639,8 @@ function App() {
           />
         </div>
       )}
-      {chartType === 'scatter' && !series.some(s => s.id === scatterYColumn) && (
-        <div style={{ color: 'orange', fontSize: '0.75rem' }}>Selected Y axis series removed.</div>
+      {chartType === 'scatter' && !series.some(s => s.id === scatterYColumn && s.visible) && (
+        <div style={{ color: 'orange', fontSize: '0.75rem' }}>Selected Y axis series hidden.</div>
       )}
     </>
   )
@@ -622,8 +696,8 @@ function App() {
                 <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Columns</span>
                 <input
                   readOnly
-                  value={summarize(visibleSeriesLabels) || '(none)'}
-                  title={visibleSeriesLabels.join(', ') || '(none)'}
+                  value={summarize(dataVisibleSeriesLabels) || '(none)'}
+                  title={dataVisibleSeriesLabels.join(', ') || '(none)'}
                   style={{
                     background: '#0f172a',
                     border: '1px solid #334155',
@@ -666,6 +740,16 @@ function App() {
             </div>
             <div className="table-panel">
               <div className="data-table-wrapper">
+                <div className="bulk-visibility-controls" style={{ display: 'flex', gap: '1rem', fontSize: '0.65rem', marginBottom: 6, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontWeight: 600 }}>Rows:</span>
+                    <button onClick={showAllRows} title="Show all rows" style={{ padding: '2px 6px' }}>Show all</button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontWeight: 600 }}>Columns:</span>
+                    <button onClick={showAllSeries} title="Show all columns" style={{ padding: '2px 6px' }}>Show all</button>
+                  </div>
+                </div>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -674,11 +758,13 @@ function App() {
                         <th
                           key={s.id}
                           className={clsx('series-header', { renaming: editingSeriesId === s.id, 'series-hidden': !s.visible })}
-                          draggable
-                          onDragStart={(e) => onSeriesDragStart(s.id, e)}
+                          /* Removed draggable from entire header; drag now only via handle */
                           onDragOver={onSeriesDragOver}
                           onDrop={() => onSeriesDrop(s.id)}
-                          title="Drag to reorder. Double-click or use ✎ to rename"
+                          title="Drag to reorder (via handle). Click to toggle visibility. Double-click or use ✎ to rename"
+                          onMouseDown={(e) => handleSeriesHeaderMouseDown(s, e)}
+                          onMouseEnter={() => handleSeriesHeaderMouseEnter(s)}
+                          onDoubleClick={() => startRenameSeries(s.id)}
                         >
                           {editingSeriesId === s.id ? (
                             <input
@@ -693,7 +779,7 @@ function App() {
                               }}
                             />
                           ) : (
-                            <div className="series-header-inner" onDoubleClick={() => startRenameSeries(s.id)}>
+                            <div className="series-header-inner">
                               <span className="series-label-text">{s.label}</span>
                               <button
                                 className="rename-btn"
@@ -705,8 +791,8 @@ function App() {
                                 onClick={(e) => { e.stopPropagation(); toggleSeriesVisible(s.id) }}
                                 aria-label={s.visible ? 'Hide series' : 'Show series'}
                                 title={s.visible ? 'Hide series from charts' : 'Show series in charts'}
-                              >{s.visible ? '👁' : '🙈'}</button>
-                              <span className="drag-handle" aria-hidden>⋮⋮</span>
+                              >👁</button>
+                              <span className="drag-handle" aria-hidden draggable onDragStart={(e) => onSeriesDragStart(s.id, e)}>⋮⋮</span>
                             </div>
                           )}
                         </th>
@@ -724,12 +810,13 @@ function App() {
                       >
                         <th
                           className={clsx('row-header', { dragging: dragRowKey.current === r.key })}
-                          draggable
-                          onDragStart={(e) => onRowDragStart(r.key, e)}
-                          title={editingRowIndex === ri ? '' : 'Drag to reorder row'}
+                          /* Removed draggable from entire header; drag now only via handle */
+                          title={editingRowIndex === ri ? '' : 'Drag to reorder row (via handle). Click to toggle visibility'}
+                          onMouseDown={(e) => handleRowHeaderMouseDown(ri, r.key, e)}
+                          onMouseEnter={() => handleRowHeaderMouseEnter(ri, r.key)}
                           onDoubleClick={() => startEditRowHeader(ri)}
                         >
-                          <span className="row-drag-handle" aria-hidden>⋮</span>
+                          <span className="row-drag-handle" aria-hidden draggable onDragStart={(e) => onRowDragStart(r.key, e)}>⋮</span>
                           {editingRowIndex === ri ? (
                             <input
                               className="th-edit-input"
@@ -759,7 +846,7 @@ function App() {
                                 aria-label={r._hidden ? 'Show row' : 'Hide row'}
                                 title={r._hidden ? 'Show row' : 'Hide row'}
                                 style={{ marginLeft: 2 }}
-                              >{r._hidden ? '🙈' : '👁'}</button>
+                              >{r._hidden ? '👁‍🗨' : '👁'}</button>
                             </span>
                           )}
                         </th>
@@ -787,10 +874,10 @@ function App() {
 }
 
 // Multi-select component
-interface MultiSelectProps { series: SeriesMeta[]; onToggle: (id: string) => void; rows: DataRow[] }
-function MultiSelectSeries({ series, onToggle, rows }: MultiSelectProps) {
+interface MultiSelectProps { series: SeriesMeta[]; selectedIds: string[]; onToggleSelect: (id: string) => void; rows: DataRow[] }
+function MultiSelectSeries({ series, selectedIds, onToggleSelect, rows }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
-  const selected = series.filter(s => s.visible)
+  const selected = series.filter(s => selectedIds.includes(s.id))
   const previewFor = (id: string) => {
     const vals = rows.slice(0, 4).map(r => r[id]).filter(v => v !== undefined)
     if (!vals.length) return ''
@@ -802,7 +889,7 @@ function MultiSelectSeries({ series, onToggle, rows }: MultiSelectProps) {
       <div className="multi-select-display" onClick={() => setOpen(o => !o)}>
         {selected.length === 0 && <span className="placeholder">Select series</span>}
         {selected.map(s => (
-          <span key={s.id} className="chip" onClick={(e) => { e.stopPropagation(); onToggle(s.id) }}>
+          <span key={s.id} className="chip" onClick={(e) => { e.stopPropagation(); onToggleSelect(s.id) }}>
             <span className="swatch" style={{ background: s.color }} /> {s.label}
           </span>
         ))}
@@ -810,13 +897,16 @@ function MultiSelectSeries({ series, onToggle, rows }: MultiSelectProps) {
       </div>
       {open && (
         <div className="multi-select-menu">
-          {series.map(s => (
-            <div key={s.id} className="menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggle(s.id)}>
-              <input type="checkbox" readOnly checked={s.visible} />
-              <span className="swatch" style={{ background: s.color }} /> {s.label}
-              <div className="menu-preview" style={{ fontSize: '0.7rem', opacity: 0.75, marginLeft: 26 }}>{previewFor(s.id)}</div>
-            </div>
-          ))}
+          {series.map(s => {
+            const checked = selectedIds.includes(s.id)
+            return (
+              <div key={s.id} className="menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => onToggleSelect(s.id)}>
+                <input type="checkbox" readOnly checked={checked} />
+                <span className="swatch" style={{ background: s.color }} /> {s.label}
+                <div className="menu-preview" style={{ fontSize: '0.7rem', opacity: 0.75, marginLeft: 26 }}>{previewFor(s.id)}</div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
