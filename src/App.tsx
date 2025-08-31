@@ -30,7 +30,8 @@ import clsx from 'clsx'
 // Types
 export interface DataRow {
   key: string | number
-  [series: string]: string | number
+  _hidden?: boolean
+  [series: string]: string | number | boolean | undefined
 }
 
 interface SeriesMeta {
@@ -114,8 +115,9 @@ function App() {
     []
   )
 
-  const removeRow = (index: number) => {
-    setRows((prev) => prev.filter((_, i) => i !== index))
+  // Hide (soft delete) row instead of removing
+  const hideRow = (index: number) => {
+    setRows(prev => prev.map((r,i) => i === index ? { ...r, _hidden: !r._hidden } : r))
   }
 
   const startRenameSeries = (id: string) => {
@@ -236,6 +238,22 @@ function App() {
   }
 
   const visibleSeries = series.filter((s) => s.visible)
+  const activeRows = rows.filter(r => !r._hidden)
+
+  // Visible labels summaries
+  const visibleRowLabels = activeRows.map(r => String(r[labelColumn] ?? r.key))
+  const visibleSeriesLabels = visibleSeries.map(s => s.label)
+  const summarize = (arr: string[], maxChars = 60) => {
+    const full = arr.join(', ')
+    if (full.length <= maxChars) return full
+    let out = ''
+    for (let i = 0; i < arr.length; i++) {
+      const next = (out ? out + ', ' : '') + arr[i]
+      if (next.length > maxChars) return out + '…'
+      out = next
+    }
+    return out
+  }
 
   // Determine active X column based on chart type
   const currentXColumn = chartType === 'scatter' ? scatterXColumn : labelColumn
@@ -254,20 +272,21 @@ function App() {
   // Helper render function for charts
   const renderChartContents = () => {
     const commonMargin = { left: 12, right: 12, top: 12, bottom: 12 }
+    const chartRows = activeRows
     if (chartType === 'stackedBar') {
       // Color scale (reuse barColorColumn state)
       const barColorScale = (() => {
         if (!barColorColumn) return () => undefined as string | undefined
         const distinct: (string | number | undefined)[] = []
-        rows.forEach(r => { const v = r[barColorColumn]; if (!distinct.includes(v)) distinct.push(v) })
+        chartRows.forEach(r => { const raw = r[barColorColumn]; const v = (typeof raw === 'boolean') ? String(raw) : raw as (string | number | undefined); if (!distinct.includes(v)) distinct.push(v) })
         return (v: unknown) => {
-          const value = v as string | number | undefined
+          const value = (typeof v === 'boolean') ? String(v) : v as string | number | undefined
           const idx = distinct.indexOf(value)
           return palette[idx % palette.length]
         }
       })()
       return (
-        <BarChart data={rows} margin={commonMargin}>
+        <BarChart data={chartRows} margin={commonMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#444" />
           <XAxis dataKey={labelColumn} />
           <YAxis />
@@ -275,7 +294,7 @@ function App() {
           <Legend />
           {visibleSeries.map(s => (
             <Bar key={s.id} dataKey={s.id} name={s.label} fill={s.color} stackId="a">
-              {barColorColumn && rows.map((r,i) => (
+              {barColorColumn && chartRows.map((r,i) => (
                 <Cell key={i} fill={barColorScale(r[barColorColumn]) || s.color} />
               ))}
             </Bar>
@@ -285,7 +304,7 @@ function App() {
     }
     if (chartType === 'area') {
       return (
-        <AreaChart data={rows} margin={commonMargin}>
+        <AreaChart data={chartRows} margin={commonMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#444" />
           <XAxis dataKey={labelColumn} />
             <YAxis />
@@ -299,7 +318,7 @@ function App() {
     }
     if (chartType === 'radar') {
       return (
-        <RadarChart data={rows} outerRadius={90} width={480} height={300}>
+        <RadarChart data={chartRows} outerRadius={90} width={480} height={300}>
           <PolarGrid />
           <PolarAngleAxis dataKey={labelColumn} />
           <PolarRadiusAxis />
@@ -312,7 +331,7 @@ function App() {
       )
     }
     if (chartType === 'pie' || chartType === 'donut') {
-      const pieData = rows.map(r => ({ label: r[labelColumn] as string | number, value: r[pieSeriesColumn] as number | string }))
+      const pieData = chartRows.map(r => ({ label: r[labelColumn] as string | number, value: r[pieSeriesColumn] as number | string }))
       return (
         <PieChart width={480} height={300}>
           <Tooltip />
@@ -328,7 +347,7 @@ function App() {
       )
     }
     if (chartType === 'histogram') {
-      const values = rows.map(r => r[histogramColumn]).filter(v => typeof v === 'number') as number[]
+      const values = chartRows.map(r => r[histogramColumn]).filter(v => typeof v === 'number') as number[]
       if (!values.length) {
         return <div style={{ padding: 16, fontSize: '0.8rem' }}>No numeric data for {histogramColumn}</div>
       }
@@ -362,15 +381,15 @@ function App() {
       const barColorScale = (() => {
         if (!barColorColumn) return () => undefined as string | undefined
         const distinct: (string | number | undefined)[] = []
-        rows.forEach(r => { const v = r[barColorColumn]; if (!distinct.includes(v)) distinct.push(v) })
+        chartRows.forEach(r => { const raw = r[barColorColumn]; const v = (typeof raw === 'boolean') ? String(raw) : raw as (string | number | undefined); if (!distinct.includes(v)) distinct.push(v) })
         return (v: unknown) => {
-          const value = v as string | number | undefined
+          const value = (typeof v === 'boolean') ? String(v) : v as string | number | undefined
             const idx = distinct.indexOf(value)
             return palette[idx % palette.length]
         }
       })()
       return (
-        <BarChart data={rows} margin={commonMargin}>
+        <BarChart data={chartRows} margin={commonMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#444" />
           <XAxis dataKey={labelColumn} />
           <YAxis />
@@ -378,7 +397,7 @@ function App() {
           <Legend />
           {visibleSeries.map(s => (
             <Bar key={s.id} dataKey={s.id} name={s.label} fill={s.color}>
-              {barColorColumn && rows.map((r,i) => (
+              {barColorColumn && chartRows.map((r,i) => (
                 <Cell key={i} fill={barColorScale(r[barColorColumn]) || s.color} />
               ))}
             </Bar>
@@ -388,7 +407,7 @@ function App() {
     }
     if (chartType === 'scatter') {
       // Build single dataset for selected Y column
-      const scatterData = rows.map(r => {
+      const scatterData = chartRows.map(r => {
         const x = r[currentXColumn]
         const y = r[scatterYColumn]
         const sizeRaw = scatterSizeColumn ? Number(r[scatterSizeColumn]) : undefined
@@ -400,9 +419,9 @@ function App() {
       const colorScale = (() => {
         if (!scatterColorColumn) return () => palette[0]
         const distinct: (string | number | undefined)[] = []
-        scatterData.forEach(d => { if (!distinct.includes(d.colorVal)) distinct.push(d.colorVal) })
+        scatterData.forEach(d => { const raw = d.colorVal; const v = (typeof raw === 'boolean') ? String(raw) : raw as (string | number | undefined); if (!distinct.includes(v)) distinct.push(v) })
         return (v: unknown) => {
-          const value = v as string | number | undefined
+          const value = (typeof v === 'boolean') ? String(v) : v as string | number | undefined
           const idx = distinct.indexOf(value)
           return palette[idx % palette.length]
         }
@@ -425,7 +444,7 @@ function App() {
     }
     // default line
     return (
-      <LineChart data={rows} margin={commonMargin}>
+      <LineChart data={chartRows} margin={commonMargin}>
         <CartesianGrid strokeDasharray="3 3" stroke="#444" />
         <XAxis dataKey={labelColumn} />
         <YAxis />
@@ -575,16 +594,51 @@ function App() {
       <div className="chart-fullscreen-wrapper">
         <div className="chart-inline-wrapper" style={{ display: 'flex', gap: '1rem', alignItems: 'stretch' }}>
           <div className="chart-fullscreen" style={{ flex: 1, minHeight: 360, position: 'relative' }}>
-            {/**
-             * Use an explicit pixel height so Recharts can calculate size.
-             * Previously height="100%" inside a flex item with auto height caused 0px chart height.
-             */}
             <ResponsiveContainer width="100%" height={360}>
               {renderChartContents()}
             </ResponsiveContainer>
-            <button className="open-editor-btn" onClick={() => setEditorOpen(true)} style={{ position: 'absolute', top: 8, right: 8, height: 40 }}>Open Editor</button>
           </div>
           <div className="inline-mapping-panel" style={{ width: 280, overflowY: 'auto', border: '1px solid #333', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
+            {/* New Data section with visibility summaries moved above mapping controls */}
+            <div className="group-label" style={{ fontWeight: 600, fontSize: '0.8rem', opacity: 0.9, marginBottom: 4 }}>Data</div>
+            <div className="visibility-summary" style={{ fontSize: '0.6rem', lineHeight: 1.25, color: '#94a3b8', marginBottom: 8, background: '#1e293b', padding: '4px 6px', borderRadius: 4 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+                <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Rows</span>
+                <input
+                  readOnly
+                  value={summarize(visibleRowLabels) || '(none)'}
+                  title={visibleRowLabels.join(', ') || '(none)'}
+                  style={{
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    color: '#e2e8f0',
+                    fontSize: '0.6rem',
+                    padding: '3px 4px',
+                    borderRadius: 4,
+                  }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Columns</span>
+                <input
+                  readOnly
+                  value={summarize(visibleSeriesLabels) || '(none)'}
+                  title={visibleSeriesLabels.join(', ') || '(none)'}
+                  style={{
+                    background: '#0f172a',
+                    border: '1px solid #334155',
+                    color: '#e2e8f0',
+                    fontSize: '0.6rem',
+                    padding: '3px 4px',
+                    borderRadius: 4,
+                  }}
+                />
+              </label>
+            </div>
+            {/* Moved Open Editor button below Data summary */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 0 0.5rem' }}>
+              <button className="open-editor-btn" onClick={() => setEditorOpen(true)} style={{ position: 'static', height: 34 }}>Open Editor</button>
+            </div>
             <div className="group-label" style={{ fontWeight: 600, fontSize: '0.8rem', opacity: 0.9, marginBottom: 4 }}>Mapping</div>
             <MappingControls />
           </div>
@@ -619,7 +673,7 @@ function App() {
                       {series.map(s => (
                         <th
                           key={s.id}
-                          className={clsx('series-header', { renaming: editingSeriesId === s.id })}
+                          className={clsx('series-header', { renaming: editingSeriesId === s.id, 'series-hidden': !s.visible })}
                           draggable
                           onDragStart={(e) => onSeriesDragStart(s.id, e)}
                           onDragOver={onSeriesDragOver}
@@ -646,12 +700,17 @@ function App() {
                                 onClick={(e) => { e.stopPropagation(); startRenameSeries(s.id) }}
                                 aria-label="Rename series"
                               >✎</button>
+                              <button
+                                className="visibility-btn"
+                                onClick={(e) => { e.stopPropagation(); toggleSeriesVisible(s.id) }}
+                                aria-label={s.visible ? 'Hide series' : 'Show series'}
+                                title={s.visible ? 'Hide series from charts' : 'Show series in charts'}
+                              >{s.visible ? '👁' : '🙈'}</button>
                               <span className="drag-handle" aria-hidden>⋮⋮</span>
                             </div>
                           )}
                         </th>
                       ))}
-                      <th />
                     </tr>
                   </thead>
                   <tbody>
@@ -661,7 +720,7 @@ function App() {
                         onDragOver={(e) => onRowDragOver(e, r.key)}
                         onDrop={() => onRowDrop(r.key)}
                         onDragEnd={onRowDragEnd}
-                        className={clsx({ 'row-drag-over-above': rowDragOverKey === r.key && rowDragPosition === 'above', 'row-drag-over-below': rowDragOverKey === r.key && rowDragPosition === 'below' })}
+                        className={clsx({ 'row-drag-over-above': rowDragOverKey === r.key && rowDragPosition === 'above', 'row-drag-over-below': rowDragOverKey === r.key && rowDragPosition === 'below', 'row-hidden': r._hidden })}
                       >
                         <th
                           className={clsx('row-header', { dragging: dragRowKey.current === r.key })}
@@ -694,6 +753,13 @@ function App() {
                                 title="Rename row header"
                                 style={{ marginLeft: 4 }}
                               >✎</button>
+                              <button
+                                className="visibility-btn"
+                                onClick={(e) => { e.stopPropagation(); hideRow(ri) }}
+                                aria-label={r._hidden ? 'Show row' : 'Hide row'}
+                                title={r._hidden ? 'Show row' : 'Hide row'}
+                                style={{ marginLeft: 2 }}
+                              >{r._hidden ? '🙈' : '👁'}</button>
                             </span>
                           )}
                         </th>
@@ -701,12 +767,11 @@ function App() {
                           const val = r[s.id] as number | string | undefined
                           const active = activeCell?.r === ri && activeCell?.c === s.id
                           return (
-                            <td key={s.id} className={clsx({ active })} onClick={() => setActiveCell({ r: ri, c: s.id })}>
+                            <td key={s.id} className={clsx({ active, 'series-hidden': !s.visible })} onClick={() => setActiveCell({ r: ri, c: s.id })}>
                               <input value={val ?? ''} onChange={(e) => handleCellChange(ri, s.id, e.target.value)} onFocus={() => setActiveCell({ r: ri, c: s.id })} />
                             </td>
                           )
                         })}
-                        <td><button className="danger" onClick={() => removeRow(ri)}>×</button></td>
                       </tr>
                     ))}
                   </tbody>

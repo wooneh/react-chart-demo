@@ -258,6 +258,8 @@ select {
 }
 .series-header:hover .drag-handle { opacity: 0.8; }
 
+.series-header.series-hidden { opacity: 0.35; text-decoration: line-through; }
+
 .rename-btn {
   background: transparent;
   border: none;
@@ -301,6 +303,8 @@ tr.row-drag-over-below th { box-shadow: 0 2px 0 #6366f1 inset; }
   text-align: center;
 }
 
+.data-table td.series-hidden { opacity: 0.3; }
+
 .data-table tbody tr:hover {
   background: #1e293b;
 }
@@ -339,6 +343,12 @@ tr.row-drag-over-below th { box-shadow: 0 2px 0 #6366f1 inset; }
 }
 .row-header:hover .row-drag-handle { opacity: 0.75; }
 
+.row-hidden td, .row-hidden th {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.row-hidden input { opacity: 0.6; }
+
 .table-actions {
   margin-bottom: 0.5rem;
   display: flex;
@@ -367,6 +377,16 @@ button.danger {
 button.danger:hover {
   background: #991b1b;
 }
+
+.visibility-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0 0.2rem;
+}
+.visibility-btn:hover { color: #cbd5e1; }
 
 .footer {
   margin-top: 1rem;
