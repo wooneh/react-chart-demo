@@ -68,6 +68,9 @@ function App() {
   const [labelColumn, setLabelColumn] = useState<string>('key')
   const [mappingOpen, setMappingOpen] = useState(true)
   const [editorOpen, setEditorOpen] = useState(false)
+  // NEW: inline panel section toggles
+  const [showDataSection, setShowDataSection] = useState(true)
+  const [showMappingSection, setShowMappingSection] = useState(true)
 
   // New chart type state
   type ChartType = 'line' | 'bar' | 'stackedBar' | 'area' | 'radar' | 'pie' | 'donut' | 'histogram' | 'scatter'
@@ -673,48 +676,130 @@ function App() {
             </ResponsiveContainer>
           </div>
           <div className="inline-mapping-panel" style={{ width: 280, overflowY: 'auto', border: '1px solid #333', borderRadius: 6, padding: '0.5rem 0.75rem' }}>
-            {/* New Data section with visibility summaries moved above mapping controls */}
-            <div className="group-label" style={{ fontWeight: 600, fontSize: '0.8rem', opacity: 0.9, marginBottom: 4 }}>Data</div>
-            <div className="visibility-summary" style={{ fontSize: '0.6rem', lineHeight: 1.25, color: '#94a3b8', marginBottom: 8, background: '#1e293b', padding: '4px 6px', borderRadius: 4 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
-                <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Rows</span>
-                <input
-                  readOnly
-                  value={summarize(visibleRowLabels) || '(none)'}
-                  title={visibleRowLabels.join(', ') || '(none)'}
-                  style={{
-                    background: '#0f172a',
-                    border: '1px solid #334155',
-                    color: '#e2e8f0',
-                    fontSize: '0.6rem',
-                    padding: '3px 4px',
-                    borderRadius: 4,
-                  }}
-                />
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Columns</span>
-                <input
-                  readOnly
-                  value={summarize(dataVisibleSeriesLabels) || '(none)'}
-                  title={dataVisibleSeriesLabels.join(', ') || '(none)'}
-                  style={{
-                    background: '#0f172a',
-                    border: '1px solid #334155',
-                    color: '#e2e8f0',
-                    fontSize: '0.6rem',
-                    padding: '3px 4px',
-                    borderRadius: 4,
-                  }}
-                />
-              </label>
+            {/* NEW: Data Source / Filters & Weight / Rules sections */}
+            <div className="config-section" style={{ marginBottom: 10 }}>
+              <details open style={{ marginBottom: 6 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}>Data Source</summary>
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.65rem' }}>
+                    <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Data</span>
+                    <input readOnly value="Financials" style={{ background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', fontSize: '0.6rem', padding: '4px 6px', borderRadius: 4 }} />
+                  </label>
+                </div>
+              </details>
+              <details open style={{ marginBottom: 6 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}>Filters & Weight</summary>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.65rem' }}>
+                    <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Filter(s)</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <select value="total" style={{ flex: 1, background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', fontSize: '0.6rem', padding: '4px 6px', borderRadius: 4 }}>
+                        <option value="total">Total Sample</option>
+                        <option value="none">None</option>
+                      </select>
+                      <button title="Add filter" style={{ fontSize: '0.65rem', padding: '0 6px' }}>＋</button>
+                    </div>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.65rem' }}>
+                    <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Weight</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <select value="none" style={{ flex: 1, background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', fontSize: '0.6rem', padding: '4px 6px', borderRadius: 4 }}>
+                        <option value="none">None</option>
+                        <option value="w1">Weight 1</option>
+                      </select>
+                      <button title="Add weight" style={{ fontSize: '0.65rem', padding: '0 6px' }}>＋</button>
+                    </div>
+                  </label>
+                </div>
+              </details>
+              <details open>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}>Rules</summary>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ fontSize: '0.6rem', color: '#94a3b8' }}>None applied</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <textarea placeholder="(Add rule)" rows={3} style={{ width: '100%', resize: 'vertical', background: '#0f172a', border: '1px solid #334155', color: '#e2e8f0', fontSize: '0.6rem', padding: '4px 6px', borderRadius: 4 }} />
+                    <button title="Add rule" style={{ fontSize: '0.65rem', height: 'fit-content', padding: '4px 6px' }}>＋</button>
+                  </div>
+                </div>
+              </details>
             </div>
-            {/* Moved Open Editor button below Data summary */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 0 0.5rem' }}>
-              <button className="open-editor-btn" onClick={() => setEditorOpen(true)} style={{ position: 'static', height: 34 }}>Open Editor</button>
-            </div>
-            <div className="group-label" style={{ fontWeight: 600, fontSize: '0.8rem', opacity: 0.9, marginBottom: 4 }}>Mapping</div>
-            <MappingControls />
+            {/* Existing Data section */}
+            <button
+              type="button"
+              onClick={() => setShowDataSection(o => !o)}
+              className="group-label"
+              style={{
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                opacity: 0.9,
+                marginBottom: 4,
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer'
+              }}
+            >{showDataSection ? '▾' : '▸'} Row & Column Selection</button>
+            {showDataSection && (
+              <>
+                <div className="visibility-summary" style={{ fontSize: '0.6rem', lineHeight: 1.25, color: '#94a3b8', marginBottom: 8, background: '#1e293b', padding: '4px 6px', borderRadius: 4 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 4 }}>
+                    <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Rows</span>
+                    <input
+                      readOnly
+                      value={summarize(visibleRowLabels) || '(none)'}
+                      title={visibleRowLabels.join(', ') || '(none)'}
+                      style={{
+                        background: '#0f172a',
+                        border: '1px solid #334155',
+                        color: '#e2e8f0',
+                        fontSize: '0.6rem',
+                        padding: '3px 4px',
+                        borderRadius: 4,
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: '0.55rem', letterSpacing: '.05em', textTransform: 'uppercase' }}>Columns</span>
+                    <input
+                      readOnly
+                      value={summarize(dataVisibleSeriesLabels) || '(none)'}
+                      title={dataVisibleSeriesLabels.join(', ') || '(none)'}
+                      style={{
+                        background: '#0f172a',
+                        border: '1px solid #334155',
+                        color: '#e2e8f0',
+                        fontSize: '0.6rem',
+                        padding: '3px 4px',
+                        borderRadius: 4,
+                      }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0 0 0.5rem' }}>
+                  <button className="open-editor-btn" onClick={() => setEditorOpen(true)} style={{ position: 'static', height: 34 }}>Open Editor</button>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowMappingSection(o => !o)}
+              className="group-label"
+              style={{
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                opacity: 0.9,
+                marginBottom: 4,
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer'
+              }}
+            >{showMappingSection ? '▾' : '▸'} Mapping</button>
+            {showMappingSection && <MappingControls />}
           </div>
         </div>
       </div>
@@ -928,7 +1013,6 @@ function LabelColumnSelect({ columns, rows, value, onChange, placeholder = 'Sele
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
   const baseCols = columns
-  // Removed standalone allCols to satisfy exhaustive-deps; derive inside memo
   const filtered = useMemo(() => {
     const allCols = (allowNone ? ['__NONE__', ...baseCols] : baseCols).filter(c => c !== '_hidden')
     if (!query.trim()) return allCols
@@ -947,11 +1031,7 @@ function LabelColumnSelect({ columns, rows, value, onChange, placeholder = 'Sele
     return value
   }
   const commit = (col: string) => {
-    if (col === '__NONE__') {
-      onChange('')
-    } else {
-      onChange(col)
-    }
+    if (col === '__NONE__') { onChange('') } else { onChange(col) }
     setOpen(false)
     setQuery('')
   }
